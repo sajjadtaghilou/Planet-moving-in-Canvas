@@ -1,0 +1,514 @@
+
+<!--
+RADU: Nice work. 2/3.
+Title is still same as in our class Demo.
+I would have wanted to see many colors at the same time on the canvas.
+
+
+	179514.html - Painter, exercise 3 
+	owner: JBj2019 
+	version 1.0.0 - [d.m.yyyy] 
+	
+	Painter with different color pens. Show the tip of the green marker 
+	to camera to get the pen. Pick the color with pen from palets.
+	
+	Original code https://cs.uef.fi/~radum/vwd/demos/strange.html
+	JBj2019: 21.9.2019: Comments added
+	........................................................ 
+
+	[locked / unlocked] 
+-->
+
+<html>
+	<head>
+		<title>Strange</title>
+		<style>
+		html{
+			font-family: "Arial";
+			text-align:center;
+		}
+		canvas{
+			background:white;
+			width:300px;
+			height:300px;
+		}
+		body{
+			background:rgb(89, 235, 145);
+		}
+		</style>
+		<script>
+
+
+var THRESHOLD = 20;
+const INTERVAL = 42; // milliseconds
+var CANVAS_SIZE = 400;
+var COLOR = [31, 95, 25]; //color of the pointer
+var LINEWIDTH = 1;
+var colordraw = 'red'; //color of the path, by default is red
+
+
+var PATHDRAW = [];
+TEMPORALDRAWING  = [];
+
+var lastPointerLocation;
+
+var IS_DRAWING = true;
+var PALETE_ACTIVATED = false;
+
+
+
+
+function main() {
+
+    var canvasA = initializeCanvas("canvasA", CANVAS_SIZE, CANVAS_SIZE); //canvas where drive 
+    var canvasB = initializeCanvas("canvasB", CANVAS_SIZE, CANVAS_SIZE);
+
+    initializeCamera(canvasA, canvasB);
+
+    // for video, use threshold 30 and color [59, 167, 88];
+    // that works much better due to better lighting
+    // initializeVideo(canvasA, canvasB);
+    //inicializeObjects();
+
+    ctxPhysics = canvasB.getContext('2d')
+
+    addEvents();
+
+
+}
+
+//______________________________
+//events 
+//______________________________
+
+ //set the line width
+ function updateLineWidth(e) {
+            POLYLINE = [];
+            LINEWIDTH = e.value;
+        }
+
+function addEvents() {
+
+    // we select the color of our pointer by clicking an object in the canvas by using our mouse.
+    canvasA.addEventListener('mousedown', function (e) {
+        //cogemos la posicion del raton cuando hacemos click
+        var location = getCursorPosition(e);
+
+        var ctx = e.target.getContext('2d');
+        var data = ctx.getImageData(location[0], location[1], 1, 1).data;
+        COLOR[0] = data[0];
+        COLOR[1] = data[1];
+        COLOR[2] = data[2];
+    });
+
+
+    // similar to 'movepointer' event, you can create and listen to events when the pointer first appears 'showpointer' or when it vanishes 'hidepointer'. 
+    // these may come in handy for your project 3.
+
+    canvasB.addEventListener('movepointer', function (e) {
+
+
+        if(!PALETE_ACTIVATED){
+            clearCanvas(e.target);
+
+            e.location["time"] = new Date().getTime();
+            e.location['color'] = colordraw;
+    
+            PATHDRAW.push(e.location);
+    
+            drawPolyline(canvasB, PATHDRAW);
+    
+        }
+        
+    });
+
+    canvasB.addEventListener('pickUpSomething', function (e) { //esto es cuando soltamos el raton 
+
+
+        if (PALETE_ACTIVATED ) { //
+
+            var ctx = canvasB.getContext('2d');
+
+            var imgd = ctx.getImageData(e.location[0], e.location[1], CANVAS_SIZE, CANVAS_SIZE);
+            var pix = imgd.data;
+
+            var hex = "#" + ("000000" + rgbToHex(pix[0], pix[1], pix[2])).slice(-6);
+
+            if (colordraw != hex && hex != '#ff0000') {
+                colordraw = hex;
+            }
+        }
+
+    })
+}
+
+//________________________________
+
+
+
+function getCursorPosition(event) {
+    var canvas = event.target;
+    var rect = canvas.getBoundingClientRect();
+    var x = event.clientX - rect.left;
+    var y = event.clientY - rect.top;
+    return [x, y];
+}
+
+//______________________________
+//function main loop
+//______________________________
+
+function processVideoFrame(video, canvasA, canvasB) {
+
+
+    //beforelocation
+    var vw = video.videoWidth;
+    var vh = video.videoHeight;
+    var min = Math.min(vw, vh);
+    var sx = (vw - min) / 2;
+    var sy = (vh - min) / 2;
+
+    var ctx = canvasA.getContext("2d");
+    ctx.drawImage(video, sx, sy, min, min,
+        0, 0, CANVAS_SIZE, CANVAS_SIZE);
+
+    //identify the pointer in a frame
+
+
+    var locations = identifyPointer(canvasA);
+    var pointerLocal;
+
+    if (locations.length != 0) {
+        pointerLocal = average(locations);
+    }
+    else {
+        pointerLocal = lastPointerLocation;
+    }
+
+    lastPointerLocation = pointerLocal;
+
+
+    // for debugging: showing pixels of 
+    // our pointer marked as blue
+    drawPixels(canvasA, locations, "blue");
+
+    if (lastPointerLocation != undefined) { //if we dont have selected the pointer, not start the game
+        createEvents(canvasB, locations);
+    }
+
+
+    // here you can check if locations is empty, that means the pointer is hidden. In that case you can dispatch another event.
+}
+
+
+
+
+function createEvents(canvasB, locations) {
+
+    if (locations.length > 0) {
+
+       
+        if(PALETE_ACTIVATED == true){
+            IS_DRAWING = false;
+            
+            var palette = generatePalette();
+            drawSphere(canvasB, palette.center, 20, palette.color)
+           
+            
+        }
+        else if(PALETE_ACTIVATED == false ){
+            IS_DRAWING = true;
+            
+            var event=new Event("movepointer");
+            event.location= lastPointerLocation;
+            canvasB.dispatchEvent(event);
+
+        }
+    }
+    else {
+
+        if(IS_DRAWING && PALETE_ACTIVATED == false){
+            PALETE_ACTIVATED = true;
+        }
+        else if(!IS_DRAWING && PALETE_ACTIVATED){
+            var event = new Event("pickUpSomething");
+            event.location = lastPointerLocation;
+            canvasB.dispatchEvent(event);
+            PALETE_ACTIVATED = false;
+        }
+    }
+}
+
+//______________________________
+//functions of game
+//______________________________
+
+function generatePalette() {
+    var palette = {
+        center :lastPointerLocation,
+        color : [Math.floor(Math.random() * 255), Math.floor(Math.random() * 255) , Math.floor(Math.random() * 255)]
+    }
+    return palette;
+}
+
+
+//______________________________
+//draw methods
+//______________________________
+
+
+function drawPolyline(canvas,points){
+    var ctx = canvas.getContext("2d");
+    ctx.beginPath();
+    
+    ctx.moveTo(points[0][0], points[0][1]);
+
+    for(var i=1;i<points.length;i++){
+        ctx.lineTo(points[i][0], points[i][1]);
+        ctx.strokeStyle = points[i]['color'];
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(points[i][0], points[i][1]);
+
+    }
+    ctx.stroke()
+
+}
+
+
+function drawSphere(canvas, center, radius, color = [255,0,0]) {
+    clearCanvas(canvasB);
+    var ctx = canvas.getContext("2d");
+    ctx.beginPath();
+    ctx.strokeStyle = 'rgb('+color[0]+','+color[1]+','+color[2]+')';
+    ctx.fillStyle ='rgb('+color[0]+','+color[1]+','+color[2]+')';
+    ctx.arc(center[0], center[1], radius, 0, 2 * Math.PI);
+    ctx.fill();
+    ctx.stroke();
+}
+
+function drawPixels(canvas, locations, color) {
+    var ctx = canvas.getContext("2d");
+    for (var i = 0; i < locations.length; i++) {
+        var location = locations[i];
+        ctx.fillStyle = color;
+        ctx.fillRect(location[0], location[1], 1, 1);
+    }
+    ctx.fill();
+}
+
+function clearCanvas(canvas) {
+    var ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+}
+
+function drawLine(canvas, from, to) {
+    var ctx = canvas.getContext("2d");
+    ctx.beginPath();
+    ctx.moveTo(from[0], from[1]);
+    ctx.lineTo(to[0], to[1]);
+    ctx.stroke();
+}
+
+function drawRegularPolygon(canvas, location, radius, sides, rotation = 0) {
+    var ctx = canvas.getContext("2d");
+    ctx.beginPath();
+    var x = location[0] + Math.cos(0 + rotation) * radius;
+    var y = location[1] + Math.sin(0 + rotation) * radius;
+    ctx.moveTo(x, y);
+    sides /= 2;
+    for (var i = Math.PI / sides; i <= Math.PI * 2; i += Math.PI / sides) {
+        var x = location[0] + Math.cos(i + rotation) * radius;
+        var y = location[1] + Math.sin(i + rotation) * radius;
+        ctx.lineTo(x, y);
+    }
+    var x = location[0] + Math.cos(0 + rotation) * radius;
+    var y = location[1] + Math.sin(0 + rotation) * radius;
+    ctx.lineTo(x, y);
+
+    ctx.stroke();
+}
+
+
+//______________________________
+//auxiliar vector functions
+//______________________________
+
+function distance(v1, v2) {
+    // general
+    var dist = 0;
+    for (var i = 0; i < v1.length; i++) {
+        dist += ((v1[i] - v2[i]) * (v1[i] - v2[i]));
+    }
+    return Math.sqrt(dist);
+    /* these below were 2D variants
+    //
+    return Math.sqrt((v1[0]-v2[0])*(v1[0]-v2[0])+
+                        (v1[1]-v2[1])*(v1[1]-v2[1]));
+    // OR
+    return getMagnitude(subtractVectors(v1,v2))
+    */
+}
+
+function average(locations) {  //middle of item
+
+    var loc = [0, 0];
+
+    for (var i = 0; i < locations.length; i++) {
+        loc[0] += locations[i][0];
+        loc[1] += locations[i][1];
+    }
+
+    loc[0] /= locations.length;
+    loc[1] /= locations.length;
+    return loc;
+}
+
+function scaleVector(vector, scaler) {
+    var newV = [
+        vector[0] * scaler,
+        vector[1] * scaler
+    ];
+    return newV;
+}
+
+function getMagnitude(vector) {
+    return Math.sqrt(vector[0] * vector[0] + vector[1] * vector[1]);
+}
+
+function normalizeVector(vector) {
+    var magn = getMagnitude(vector);
+    var newV = [
+        vector[0] / magn,
+        vector[1] / magn
+    ];
+    return newV;
+}
+
+function addVectors(v1, v2) {
+    var newV = [
+        v1[0] + v2[0],
+        v1[1] + v2[1]
+    ];
+    return newV;
+}
+function subtractVectors(v1, v2) {
+    var newV = [
+        v1[0] - v2[0],
+        v1[1] - v2[1]
+    ];
+    return newV;
+}
+
+//______________________________
+//general AUXILIAR FUNCTIONS
+//______________________________
+
+
+
+
+function identifyPointer(canvas) {
+    var ctx = canvas.getContext("2d");
+
+    var imageData = ctx.getImageData(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+    var oneDArray = imageData.data;
+
+    var locations = [];
+
+    for (var i = 0; i < CANVAS_SIZE; i++) {
+        for (var j = 0; j < CANVAS_SIZE; j++) {
+            var grayValue;
+            var r = oneDArray[i * CANVAS_SIZE * 4 + j * 4 + 0];
+            var g = oneDArray[i * CANVAS_SIZE * 4 + j * 4 + 1];
+            var b = oneDArray[i * CANVAS_SIZE * 4 + j * 4 + 2];
+            var a = oneDArray[i * CANVAS_SIZE * 4 + j * 4 + 3];
+
+            var vector = [r, g, b];
+
+
+            // Color distance in LAB space works best.
+            // Keep in mind that human perception is individual and subjective... There is no perfect solution, but LAB tries to do something, whereas RGB is not concerned with percieved differences.
+            if (distance(rgb2lab(COLOR), rgb2lab(vector)) < THRESHOLD) {
+                locations.push([j, i]);
+            }
+        }
+    }
+
+    return locations;
+}
+
+function initializeCamera(canvasA, canvasB) {
+    var promise = navigator.mediaDevices.getUserMedia({ video: true });
+    promise.then(function (signal) {
+        var video = document.createElement('video');
+        video.srcObject = signal;
+        video.play();
+        setInterval(processVideoFrame, INTERVAL, video, canvasA, canvasB);
+    }).catch(function (err) {
+        alert("Camera Error");
+    });
+}
+
+function initializeVideo(canvasA, canvasB) {
+    var video = document.createElement('video');
+    video.src = 'videoInput/1.mp4';
+    video.load();
+    video.muted = true;
+    video.play();
+    setInterval(processVideoFrame, INTERVAL, video, canvasA, canvasB);
+}
+
+function initializeCanvas(canvasID, width, height) {
+    var c = document.getElementById(canvasID);
+    var ctx = c.getContext("2d");
+    ctx.canvas.width = width;
+    ctx.canvas.height = height;
+
+    return c;
+}
+
+
+function rgb2lab(rgb) {
+    var r = rgb[0] / 255;
+    var g = rgb[1] / 255;
+    var b = rgb[2] / 255;
+    var x, y, z;
+
+    r = (r > 0.04045) ? Math.pow((r + 0.055) / 1.055, 2.4) : r / 12.92;
+    g = (g > 0.04045) ? Math.pow((g + 0.055) / 1.055, 2.4) : g / 12.92;
+    b = (b > 0.04045) ? Math.pow((b + 0.055) / 1.055, 2.4) : b / 12.92;
+
+    x = (r * 0.4124 + g * 0.3576 + b * 0.1805) / 0.95047;
+    y = (r * 0.2126 + g * 0.7152 + b * 0.0722) / 1.00000;
+    z = (r * 0.0193 + g * 0.1192 + b * 0.9505) / 1.08883;
+
+    x = (x > 0.008856) ? Math.pow(x, 1 / 3) : (7.787 * x) + 16 / 116;
+    y = (y > 0.008856) ? Math.pow(y, 1 / 3) : (7.787 * y) + 16 / 116;
+    z = (z > 0.008856) ? Math.pow(z, 1 / 3) : (7.787 * z) + 16 / 116;
+
+    return [(116 * y) - 16, 500 * (x - y), 200 * (y - z)];
+}
+
+function rgbToHex(r, g, b) {
+
+    return ((r << 16) | (g << 8) | b).toString(16);
+}
+
+
+
+		</script>
+	</head>
+	<body onload="main()">
+		<h1>Strange</h1>
+		<canvas id="canvasA"></canvas>
+		<canvas id="canvasB"></canvas>
+		<h4>Show the tip of the green marker 
+	to camera to get the pen. Pick the color with pen from palets.</h4>
+	<button onclick="stopDrawing()">Stop</button>
+        <button onclick="startDrawing()">Start</button>
+        <button onclick="clearCanvas()">Clear</button>
+        &nbsp&nbspLine Width: <input type="number" id="lineWidth" value="1" name="lineWidth"
+            onchange="updateLineWidth(this)">
+        &nbsp&nbsp
+	</body>
+</html>
